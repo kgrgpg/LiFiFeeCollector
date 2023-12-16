@@ -1,5 +1,5 @@
 import { ethers } from 'ethers';
-import { from } from 'rxjs';
+import { from, Observable } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 
 import dotenv from 'dotenv';
@@ -27,7 +27,31 @@ function getLatestBlockNumber() {
 }
 
 // Subscribe to the observable to perform the query
-getLatestBlockNumber().subscribe({
-  next: blockNumber => console.log(`Latest Polygon Mainnet Block Number: ${blockNumber}`),
-  error: err => console.error('Error in subscription:', err)
+// getLatestBlockNumber().subscribe({
+//   next: blockNumber => console.log(`Latest Polygon Mainnet Block Number: ${blockNumber}`),
+//   error: err => console.error('Error in subscription:', err)
+// });
+
+// Function to create an Observable that listens for new blocks
+function newBlockObservable() {
+  return new Observable<number>(observer => {
+    wsProvider.on("block", (blockNumber) => {
+      observer.next(blockNumber);
+    });
+
+    // Cleanup logic in case of unsubscription
+    return () => {
+      wsProvider.removeAllListeners("block");
+    };
+  });
+}
+
+// Subscribe to the observable to listen for new blocks
+const blockSubscription = newBlockObservable().subscribe({
+  next: blockNumber => console.log(`New Polygon Mainnet Block Number: ${blockNumber}`),
+  error: err => console.error('Error in block subscription:', err),
+  complete: () => console.log('Block subscription completed')
 });
+
+// If you ever need to stop listening for blocks, you can unsubscribe
+// blockSubscription.unsubscribe();
