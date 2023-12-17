@@ -5,7 +5,10 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "tsc"
+    "build": "tsc",
+    "start:queryRpc": "node dist/queryRpc.js",
+    "start:restServer": "node dist/restServer.js",
+    "start": "npm run start:queryRpc & npm run start:restServer"
   },
   "author": "Keshav Gupta",
   "license": "ISC",

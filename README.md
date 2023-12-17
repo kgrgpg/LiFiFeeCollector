@@ -34,10 +34,25 @@ This project is designed for handling Ethereum smart contract interactions with 
 
 **Run the Application:**
 
-```sh
-npm start
-```
-This command will start the application, which listens for FeeCollected events from the FeeCollector contract and provides a REST API interface.
+You can start the applications individually or both at the same time. Ensure your MongoDB database and Ethereum RPC are configured and running as expected.
+
+1. **Start the `queryRpc` Application:**
+   This application listens for `FeeCollected` events from the `FeeCollector` contract.
+   ```sh
+   npm run start:queryRpc
+   ```
+2. **Start the `restServer` Application:**
+   This application provides a REST API interface.
+   ```sh
+   npm run start:restServer
+   ```
+3. **Run both together:**
+   To start both queryRpc and restServer simultaneously:
+   ```sh
+   npm run start
+   ```
+
+
 
 ## REST API Usage
 
