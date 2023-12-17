@@ -1,6 +1,6 @@
 import { ethers, EventFilter, EventLog, Log } from 'ethers';
-import { from, Observable, of } from 'rxjs';
-import { catchError, switchMap, mergeWith, mergeMap } from 'rxjs/operators';
+import { from, Observable, of, timer } from 'rxjs';
+import { catchError, switchMap, mergeWith, mergeMap, retry } from 'rxjs/operators';
 import { FeeCollectedEvent, FeeCollectedEventModel } from './models/FeeCollectedEvent';
 import FeeCollectorABIJson from './contracts/FeeCollectorABI.json';
 
@@ -50,30 +50,32 @@ function newBlockObservable() {
   });
 }
 
-// Subscribe to the observable to listen for new blocks
-const blockSubscription = newBlockObservable().subscribe({
-  next: blockNumber => console.log(`New Polygon Mainnet Block Number: ${blockNumber}`),
-  error: err => console.error('Error in block subscription:', err),
-  complete: () => console.log('Block subscription completed')
-});
-
-// If you ever need to stop listening for blocks, you can unsubscribe
-// blockSubscription.unsubscribe();
-
 // Function to listen to real-time FeeCollected events
 function listenToRealTimeEvents(): Observable<FeeCollectedEvent[]> {
-  return new Observable(subscriber => {
-    feesCollectorContract.on("FeesCollected", (event) => {
-      const parsedEvents = parseFeesCollectedEvents([event]);
-      subscriber.next(parsedEvents);
-    });
+  return new Observable<FeeCollectedEvent[]>(subscriber => {
+    const setupEventListener = () => {
+      feesCollectorContract.on("FeesCollected", (event) => {
+        const parsedEvents = parseFeesCollectedEvents([event]);
+        subscriber.next(parsedEvents);
+      });
+    };
 
-    // Cleanup function
+    setupEventListener();
+
     return () => {
       feesCollectorContract.removeAllListeners("FeesCollected");
     };
-  });
+  }).pipe(
+    retry({
+      count: 3, // Retry up to 3 times
+      delay: (error, retryCount) => {
+        console.log(`Attempt ${retryCount}: retrying in ${retryCount * 1000}ms`);
+        return timer(retryCount * 1000); // Use timer to create a delay
+      }
+    })
+  );
 }
+
 
 // Function to parse events
 function parseFeesCollectedEvents(events: EventLog[]): FeeCollectedEvent[] {
