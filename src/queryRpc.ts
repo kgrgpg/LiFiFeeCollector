@@ -63,8 +63,7 @@ function listenToRealTimeEvents(): Observable<FeeCollectedEvent[]> {
           lifiFee: _lifiFee,
           eventDetails: event
         });
-        console.log("Event log:", event.eventDetails.log);
-        const parsedEvent = parseFeesCollectedEvents([event.eventDetails.log]);
+        const parsedEvent = parseRealTimeFeesCollectedEvents([event]);
         subscriber.next(parsedEvent);
       });
     };
@@ -87,6 +86,23 @@ function listenToRealTimeEvents(): Observable<FeeCollectedEvent[]> {
     })
   );
 }
+
+// Function to parse real-time FeeCollected events
+function parseRealTimeFeesCollectedEvents(eventDetails: any[]): FeeCollectedEvent[] {
+  return eventDetails.map(eventDetail => {
+    const eventLog = eventDetail.log;
+    const feesCollected: FeeCollectedEvent = {
+      token: eventLog.args[0],
+      integrator: eventLog.args[1],
+      integratorFee: BigInt(eventLog.args[2]),
+      lifiFee: BigInt(eventLog.args[3]),
+      transactionHash: eventLog.transactionHash,
+      blockNumber: eventLog.blockNumber
+    };
+    return feesCollected;
+  });
+}
+
 
 
 // Function to parse events
