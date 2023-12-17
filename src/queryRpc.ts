@@ -106,7 +106,7 @@ function parseRealTimeFeesCollectedEvents(eventDetails: any[]): FeeCollectedEven
 
 
 // Function to parse events
-function parseFeesCollectedEvents(events: EventLog[]): FeeCollectedEvent[] {
+function parseHistoricalFeesCollectedEvents(events: EventLog[]): FeeCollectedEvent[] {
   return events.map(event => {
     const feesCollected: FeeCollectedEvent = {
       token: event.args[0],
@@ -127,7 +127,7 @@ function getHistoricalFeesCollectedEventsObservable(fromBlock: number, toBlock: 
     switchMap(events => {
       // Filter out only EventLog objects
       const eventLogs = events.filter((event): event is EventLog => event instanceof EventLog);
-      const parsedEvents = parseFeesCollectedEvents(eventLogs);
+      const parsedEvents = parseHistoricalFeesCollectedEvents(eventLogs);
       return of(parsedEvents);
     }),
     catchError(error => {
@@ -153,11 +153,23 @@ function getLatestStoredBlockNumber(): Observable<number> {
 // Creating observables for historical and real-time events
 const latestBlockNumber$ = from(wsProvider.getBlockNumber());
 const realTimeEvents$ = listenToRealTimeEvents();
-const historicalEvents$ = latestBlockNumber$.pipe(
-  switchMap(toBlock => getHistoricalFeesCollectedEventsObservable(START_BLOCK, toBlock)), // START_BLOCK needs to be defined
+// For historical events, we need to get the historical events from the last stored block to the latest block
+const historicalEvents$ = getLatestStoredBlockNumber().pipe(
+  switchMap(latestStoredBlock => {
+    const fromBlock = latestStoredBlock + 1; // Start from the next block after the latest stored
+    return latestBlockNumber$.pipe(
+      switchMap(toBlock => {
+        if (fromBlock > toBlock) {
+          return of([]); // No new blocks to process
+        }
+        return getHistoricalFeesCollectedEventsObservable(fromBlock, toBlock);
+      })
+    );
+  }),
+  mergeMap(events => events), // Flatten the array of events
   catchError(error => {
     console.error('Error fetching historical events:', error);
-    return []; // Fallback in case of error
+    return of([]);
   })
 );
 
@@ -181,7 +193,9 @@ const allEvents$ = historicalEvents$.pipe(
 
 // Subscribing to the merged observable
 allEvents$.pipe(
-  mergeMap(events => events),
+  mergeMap(events => 
+    Array.isArray(events) ? from(events) : of(events)
+  ), // Ensure events is an observable stream
   mergeMap(event => 
     from(FeeCollectedEventModel.findOne({ transactionHash: event.transactionHash }).exec()).pipe(
       mergeMap(existingEvent => {
