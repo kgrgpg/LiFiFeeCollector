@@ -14,6 +14,9 @@ export class FeeCollectedEvent {
 
   @prop({ required: true, unique: true })
   public transactionHash!: string;
+
+  @prop({ required: true })
+  public blockNumber!: number;
 }
 
 export const FeeCollectedEventModel = getModelForClass(FeeCollectedEvent);

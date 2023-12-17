@@ -1,8 +1,9 @@
 import { ethers, EventFilter, EventLog, Log } from 'ethers';
 import { from, Observable, of, timer } from 'rxjs';
-import { catchError, switchMap, mergeWith, mergeMap, retry } from 'rxjs/operators';
+import { catchError, switchMap, mergeWith, mergeMap, retry, map } from 'rxjs/operators';
 import { FeeCollectedEvent, FeeCollectedEventModel } from './models/FeeCollectedEvent';
 import FeeCollectorABIJson from './contracts/FeeCollectorABI.json';
+import playSound from 'play-sound';
 
 import dotenv from 'dotenv';
 dotenv.config();
@@ -54,15 +55,26 @@ function newBlockObservable() {
 function listenToRealTimeEvents(): Observable<FeeCollectedEvent[]> {
   return new Observable<FeeCollectedEvent[]>(subscriber => {
     const setupEventListener = () => {
-      feesCollectorContract.on("FeesCollected", (event) => {
-        const parsedEvents = parseFeesCollectedEvents([event]);
-        subscriber.next(parsedEvents);
+      feesCollectorContract.on("FeesCollected", (_token, _integrator, _integratorFee, _lifiFee, event) => {
+        console.log("Real-time event received:", {
+          token: _token,
+          integrator: _integrator,
+          integratorFee: _integratorFee,
+          lifiFee: _lifiFee,
+          eventDetails: event
+        });
+        console.log("Event log:", event.eventDetails.log);
+        const parsedEvent = parseFeesCollectedEvents([event.eventDetails.log]);
+        subscriber.next(parsedEvent);
       });
     };
 
     setupEventListener();
+    // Log when setup is called
+    console.log("Setting up real-time event listener");
 
     return () => {
+      console.log("Removing real-time event listener");
       feesCollectorContract.removeAllListeners("FeesCollected");
     };
   }).pipe(
@@ -85,7 +97,8 @@ function parseFeesCollectedEvents(events: EventLog[]): FeeCollectedEvent[] {
       integrator: event.args[1],
       integratorFee: BigInt(event.args[2]),
       lifiFee: BigInt(event.args[3]),
-      transactionHash: event.transactionHash
+      transactionHash: event.transactionHash,
+      blockNumber: event.blockNumber
     };
     return feesCollected;
   });
@@ -108,6 +121,19 @@ function getHistoricalFeesCollectedEventsObservable(fromBlock: number, toBlock: 
   );
 }
 
+// Function to get the latest stored block number
+function getLatestStoredBlockNumber(): Observable<number> {
+  return from(
+    FeeCollectedEventModel.findOne().sort({ blockNumber: -1 }).limit(1).exec()
+  ).pipe(
+    map(event => event ? event.blockNumber : START_BLOCK),
+    catchError(error => {
+      console.error('Error fetching latest stored block number:', error);
+      return of(START_BLOCK); // Default to START_BLOCK in case of error
+    })
+  );
+}
+
 // Creating observables for historical and real-time events
 const latestBlockNumber$ = from(wsProvider.getBlockNumber());
 const realTimeEvents$ = listenToRealTimeEvents();
@@ -118,6 +144,19 @@ const historicalEvents$ = latestBlockNumber$.pipe(
     return []; // Fallback in case of error
   })
 );
+
+// Create an instance of the play-sound module
+const play = playSound();
+
+function playBeep() {
+  play.play('./censorBeep.wav', (err: Error | null) => {
+    if (err) {
+      console.error('Error playing sound:', err);
+    } else {
+      console.log('Sound played successfully');
+    }
+  });
+}
 
 // Merging the observables using mergeWith
 const allEvents$ = historicalEvents$.pipe(
@@ -154,6 +193,7 @@ allEvents$.pipe(
   next: event => {
     if (event) {
       console.log('Event saved to MongoDB:', event);
+      // playBeep();
     }
   },
   error: err => console.error('Error:', err),
