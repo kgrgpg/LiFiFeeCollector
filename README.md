@@ -9,6 +9,7 @@ This project is designed for handling Ethereum smart contract interactions with 
 - TypeScript 
 - Ethereum wallet with RPC access 
 - MongoDB 
+- Docker (for Docker-based setup)
 
 ## Setup
 
@@ -52,8 +53,6 @@ You can start the applications individually or both at the same time. Ensure you
    npm run start
    ```
 
-
-
 ## REST API Usage
 
 **Get FeeCollected Events:**
@@ -62,6 +61,22 @@ You can start the applications individually or both at the same time. Ensure you
 - **Description:** Retrieves all collected events for a given integrator.
 - **Example:** `curl http://localhost:3000/events/0xIntegratorAddress`
 
+## Running via Docker
+
+1. Build the Docker Containers: 
+   This command will build the Docker images for the application and the MongoDB database.
+   ```sh
+   docker-compose build
+   ```
+2. Run the Docker Containers:
+   This command will start the containers based on the configuration in the docker-compose.yml file.
+   ```sh
+   docker-compose up
+   ```
+   You can add -d to run the containers in detached mode.
+3. Accessing the Application:
+   The application will be accessible at http://localhost:3000, and MongoDB will be available on its default port 27017.
+   
 ## Additional Information
 
 **Contract Interactions:**
