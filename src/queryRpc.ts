@@ -1,11 +1,17 @@
 import { ethers, EventFilter, EventLog, Log } from 'ethers';
 import { from, Observable, of } from 'rxjs';
-import { catchError, switchMap, mergeWith } from 'rxjs/operators';
-import { ParsedFeeCollectedEvent } from './models/ParsedfeeCollectedEvent';
+import { catchError, switchMap, mergeWith, mergeMap } from 'rxjs/operators';
+import { FeeCollectedEvent, FeeCollectedEventModel } from './models/FeeCollectedEvent';
 import FeeCollectorABIJson from './contracts/FeeCollectorABI.json';
 
 import dotenv from 'dotenv';
 dotenv.config();
+
+import mongoose from 'mongoose';
+
+mongoose.connect('mongodb://localhost:27017/LiFiFeeCollectorDb')
+  .then(() => console.log("Connected to MongoDB"))
+  .catch(err => console.error("Could not connect to MongoDB:", err));
 
 // Replace with your Infura project ID
 const INFURA_PROJECT_ID = process.env.INFURA_PROJECT_ID;
@@ -55,7 +61,7 @@ const blockSubscription = newBlockObservable().subscribe({
 // blockSubscription.unsubscribe();
 
 // Function to listen to real-time FeeCollected events
-function listenToRealTimeEvents(): Observable<ParsedFeeCollectedEvent[]> {
+function listenToRealTimeEvents(): Observable<FeeCollectedEvent[]> {
   return new Observable(subscriber => {
     feesCollectorContract.on("FeesCollected", (event) => {
       const parsedEvents = parseFeesCollectedEvents([event]);
@@ -70,13 +76,14 @@ function listenToRealTimeEvents(): Observable<ParsedFeeCollectedEvent[]> {
 }
 
 // Function to parse events
-function parseFeesCollectedEvents(events: EventLog[]): ParsedFeeCollectedEvent[] {
+function parseFeesCollectedEvents(events: EventLog[]): FeeCollectedEvent[] {
   return events.map(event => {
-    const feesCollected: ParsedFeeCollectedEvent = {
+    const feesCollected: FeeCollectedEvent = {
       token: event.args[0],
       integrator: event.args[1],
       integratorFee: BigInt(event.args[2]),
       lifiFee: BigInt(event.args[3]),
+      transactionHash: event.transactionHash
     };
     return feesCollected;
   });
@@ -115,11 +122,37 @@ const allEvents$ = historicalEvents$.pipe(
   mergeWith(realTimeEvents$)
 );
 
-// Subscription to handle events
-allEvents$.subscribe({
+// Subscribing to the merged observable
+allEvents$.pipe(
+  mergeMap(events => events),
+  mergeMap(event => 
+    from(FeeCollectedEventModel.findOne({ transactionHash: event.transactionHash }).exec()).pipe(
+      mergeMap(existingEvent => {
+        if (existingEvent) {
+          console.log('Event already exists in MongoDB:', existingEvent);
+          return of(null); // Event already exists, return null
+        } else {
+          const newEvent = new FeeCollectedEventModel(event);
+          return from(newEvent.save()).pipe(
+            mergeMap(() => of(event)) // Return the event data
+          );
+        }
+      }),
+      catchError(error => {
+        console.error('Error processing event:', error);
+        return of(null); // Handle the error
+      })
+    )
+  ),
+  catchError(err => {
+    console.error('Error in the event stream:', err);
+    return of(null); // Handle or rethrow the error
+  })
+).subscribe({
   next: event => {
-    // Handle each event, e.g., store in a database or perform actions
-    console.log('Event received:', event);
+    if (event) {
+      console.log('Event saved to MongoDB:', event);
+    }
   },
   error: err => console.error('Error:', err),
   complete: () => console.log('Completed event stream')

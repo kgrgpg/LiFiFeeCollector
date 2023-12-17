@@ -10,6 +10,8 @@
     "moduleResolution": "node",
     "sourceMap": true,
     "lib": ["es2020", "dom"],
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
   }
 }
