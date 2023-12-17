@@ -93,11 +93,11 @@ function parseRealTimeFeesCollectedEvents(eventDetails: any[]): FeeCollectedEven
   return eventDetails.map(eventDetail => {
     const eventLog = eventDetail.log;
     const feesCollected: FeeCollectedEvent = {
-      token: eventLog.args[0],
-      integrator: eventLog.args[1],
+      token: eventLog.args[0].toLowerCase(), // Convert to lowercase
+      integrator: eventLog.args[1].toLowerCase(), // Convert to lowercase
       integratorFee: BigInt(eventLog.args[2]),
       lifiFee: BigInt(eventLog.args[3]),
-      transactionHash: eventLog.transactionHash,
+      transactionHash: eventLog.transactionHash.toLowerCase(), // Convert to lowercase
       blockNumber: eventLog.blockNumber
     };
     return feesCollected;
@@ -110,11 +110,11 @@ function parseRealTimeFeesCollectedEvents(eventDetails: any[]): FeeCollectedEven
 function parseHistoricalFeesCollectedEvents(events: EventLog[]): FeeCollectedEvent[] {
   return events.map(event => {
     const feesCollected: FeeCollectedEvent = {
-      token: event.args[0],
-      integrator: event.args[1],
+      token: event.args[0].toLowerCase(), // Convert to lowercase
+      integrator: event.args[1].toLowerCase(), // Convert to lowercase
       integratorFee: BigInt(event.args[2]),
       lifiFee: BigInt(event.args[3]),
-      transactionHash: event.transactionHash,
+      transactionHash: event.transactionHash.toLowerCase(), // Convert to lowercase
       blockNumber: event.blockNumber
     };
     return feesCollected;

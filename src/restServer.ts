@@ -24,13 +24,17 @@ function bigIntReplacer(key: string, value: any) {
 }
 // Endpoint to get events for a specific integrator
 app.get('/events/:integrator', (req, res) => {
-  const integratorAddress = req.params.integrator;
+  const integratorAddress = req.params.integrator.toLowerCase();
+  console.log(`Getting events for integrator ${integratorAddress}`);
 
   // Create an Observable from the MongoDB query
   const events$ = from(FeeCollectedEventModel.find({ integrator: integratorAddress }).exec());
 
   events$.pipe(
-    map(events => JSON.stringify(events, bigIntReplacer)),
+    map(events => {
+      console.log(`Query result for integrator ${integratorAddress}:`, events);
+      return JSON.stringify(events, bigIntReplacer);
+    }),
     map(jsonString => res.type('json').send(jsonString)),
     catchError(error => {
         console.error(error);
