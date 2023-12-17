@@ -1,6 +1,6 @@
 import { ethers, EventFilter, EventLog, Log } from 'ethers';
-import { from, Observable } from 'rxjs';
-import { catchError } from 'rxjs/operators';
+import { from, Observable, of } from 'rxjs';
+import { catchError, switchMap, mergeWith } from 'rxjs/operators';
 import { ParsedFeeCollectedEvent } from './models/ParsedfeeCollectedEvent';
 import FeeCollectorABIJson from './contracts/FeeCollectorABI.json';
 
@@ -25,33 +25,10 @@ if (!CONTRACT_ADDRESS) {
 }
 // Parse the ABI string to an object
 const FeeCollectorABI = JSON.parse(FeeCollectorABIJson.result);
-const contract = new ethers.Contract(CONTRACT_ADDRESS, FeeCollectorABI, wsProvider);
+const feesCollectorContract = new ethers.Contract(CONTRACT_ADDRESS, FeeCollectorABI, wsProvider);
 
-// Function to create an Observable that listens for new events
-function feesCollectedObservable() {
-  return new Observable(subscriber => {
-    contract.on("FeesCollected", (_token, _integrator, _integratorFee, _lifiFee, event) => {
-      // Create an object with the event details
-      const eventData = {
-        token: _token,
-        integrator: _integrator,
-        integratorFee: _integratorFee.toString(),
-        lifiFee: _lifiFee.toString(),
-        blockNumber: event.blockNumber,
-        transactionHash: event.transactionHash
-      };
-
-      // Emit the event data
-      subscriber.next(eventData);
-    });
-
-    // Cleanup logic in case of unsubscription
-    return () => {
-      contract.removeAllListeners("FeesCollected");
-    };
-  });
-}
-
+// Start block number to start listening for events
+const START_BLOCK = Number(process.env.START_BLOCK);
 
 // Function to create an Observable that listens for new blocks
 function newBlockObservable() {
@@ -77,17 +54,20 @@ const blockSubscription = newBlockObservable().subscribe({
 // If you ever need to stop listening for blocks, you can unsubscribe
 // blockSubscription.unsubscribe();
 
-// Subscribe to the observable to listen for new events
-const feesCollectedSubscription = feesCollectedObservable().subscribe({
-  next: event => {
-    console.log(`FeesCollected Event:`, event);
-  },
-  error: err => console.error('Error:', err),
-  complete: () => console.log('Completed')
-});
+// Function to listen to real-time FeeCollected events
+function listenToRealTimeEvents(): Observable<ParsedFeeCollectedEvent[]> {
+  return new Observable(subscriber => {
+    feesCollectorContract.on("FeesCollected", (event) => {
+      const parsedEvents = parseFeesCollectedEvents([event]);
+      subscriber.next(parsedEvents);
+    });
 
-// To unsubscribe (e.g., when shutting down the application)
-// feesCollectedSubscription.unsubscribe();
+    // Cleanup function
+    return () => {
+      feesCollectorContract.removeAllListeners("FeesCollected");
+    };
+  });
+}
 
 // Function to parse events
 function parseFeesCollectedEvents(events: EventLog[]): ParsedFeeCollectedEvent[] {
@@ -104,8 +84,14 @@ function parseFeesCollectedEvents(events: EventLog[]): ParsedFeeCollectedEvent[]
 
 // Function to get historical events
 function getHistoricalFeesCollectedEventsObservable(fromBlock: number, toBlock: number) {
-  const eventFilter = contract.filters.FeesCollected();
-  return from(contract.queryFilter(eventFilter, fromBlock, toBlock)).pipe(
+  const eventFilter = feesCollectorContract.filters.FeesCollected();
+  return from(feesCollectorContract.queryFilter(eventFilter, fromBlock, toBlock)).pipe(
+    switchMap(events => {
+      // Filter out only EventLog objects
+      const eventLogs = events.filter((event): event is EventLog => event instanceof EventLog);
+      const parsedEvents = parseFeesCollectedEvents(eventLogs);
+      return of(parsedEvents);
+    }),
     catchError(error => {
       console.error('Error fetching historical events:', error);
       throw error;
@@ -113,30 +99,28 @@ function getHistoricalFeesCollectedEventsObservable(fromBlock: number, toBlock: 
   );
 }
 
-const fromBlock = 51197813; // Replace with the start block number
-const toBlock = 51207181;   // Replace with the end block number
+// Creating observables for historical and real-time events
+const latestBlockNumber$ = from(wsProvider.getBlockNumber());
+const realTimeEvents$ = listenToRealTimeEvents();
+const historicalEvents$ = latestBlockNumber$.pipe(
+  switchMap(toBlock => getHistoricalFeesCollectedEventsObservable(START_BLOCK, toBlock)), // START_BLOCK needs to be defined
+  catchError(error => {
+    console.error('Error fetching historical events:', error);
+    return []; // Fallback in case of error
+  })
+);
 
-// Subscribe to the observable to listen for historical events
-// getHistoricalFeesCollectedEventsObservable(fromBlock, toBlock).subscribe({
-//   next: events => {
-//     console.log(`Fetched ${events.length} historical FeesCollected events`);
-//     events.forEach(event => {
-//       // Process each event as needed
-//       console.log(event);
-//     });
-//   },
-//   error: err => console.error('Error in subscription:', err)
-// });
+// Merging the observables using mergeWith
+const allEvents$ = historicalEvents$.pipe(
+  mergeWith(realTimeEvents$)
+);
 
-// Subscribe to the observable to listen for historical events PARSED
-getHistoricalFeesCollectedEventsObservable(fromBlock, toBlock).subscribe({
-  next: events => {
-    // Filter and type assert the array to include only EventLog objects
-    const eventLogs: EventLog[] = events.filter((event): event is EventLog => event instanceof EventLog);
-    
-    const parsedEvents = parseFeesCollectedEvents(eventLogs);
-    console.log(`Parsed Events:`, parsedEvents);
-    // Further processing of parsedEvents as needed
+// Subscription to handle events
+allEvents$.subscribe({
+  next: event => {
+    // Handle each event, e.g., store in a database or perform actions
+    console.log('Event received:', event);
   },
-  error: err => console.error('Error in subscription:', err)
+  error: err => console.error('Error:', err),
+  complete: () => console.log('Completed event stream')
 });
